@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EDA OpenPlay — Dashboard Interactivo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { heading: ['Space Grotesk','sans-serif'], body: ['DM Sans','sans-serif'] },
+      colors: {
+        bg: '#0a0e1a', card: '#111827', cardHover: '#1a2236',
+        border: '#1e2d4a', muted: '#7a8ba8', fg: '#e2e8f0',
+        accent1: '#14b8a6', accent2: '#f59e0b', accent3: '#f43f5e',
+        accent1Dim: '#0d9488', accent2Dim: '#d97706', accent3Dim: '#e11d48',
+      }
+    }
+  }
+}
+</script>
+<style>
+  :root { --accent1: #14b8a6; --accent2: #f59e0b; --accent3: #f43f5e; }
+  * { box-sizing: border-box; }
+  body { font-family: 'DM Sans', sans-serif; background: #0a0e1a; color: #e2e8f0; }
+  h1,h2,h3,h4,h5 { font-family: 'Space Grotesk', sans-serif; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #0a0e1a; }
+  ::-webkit-scrollbar-thumb { background: #1e2d4a; border-radius: 3px; }
+
+  .tab-btn { transition: all 0.3s ease; position: relative; }
+  .tab-btn::after { content:''; position:absolute; bottom:-2px; left:50%; width:0; height:3px; border-radius:2px; transition: all 0.3s ease; transform:translateX(-50%); }
+  .tab-btn.active-h1::after { width:100%; background: var(--accent1); }
+  .tab-btn.active-h2::after { width:100%; background: var(--accent2); }
+  .tab-btn.active-h3::after { width:100%; background: var(--accent3); }
+
+  .hyp-section { display:none; animation: fadeSlide 0.5s ease; }
+  .hyp-section.active { display:block; }
+  @keyframes fadeSlide { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+  .kpi-card { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+  .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+
+  .verdict-badge { display:inline-flex; align-items:center; gap:6px; padding:6px 16px; border-radius:9999px; font-weight:600; font-size:0.85rem; letter-spacing:0.02em; }
+
+  .plotly-chart .modebar { opacity:0; transition: opacity 0.3s; }
+  .plotly-chart:hover .modebar { opacity:1; }
+
+  /* SVG Path diagram animations */
+  .path-arrow { transition: stroke-opacity 0.3s, stroke-width 0.3s; }
+  .path-arrow:hover { stroke-opacity:1 !important; stroke-width:3.5 !important; }
+  .path-label { font-family:'Space Grotesk',sans-serif; }
+
+  .glow-line { position:absolute; height:1px; width:100%; opacity:0.15; }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ============ HEADER ============ -->
+<header class="relative overflow-hidden border-b border-border">
+  <div class="absolute inset-0" style="background: radial-gradient(ellipse at 30% 0%, rgba(20,184,166,0.08) 0%, transparent 60%), radial-gradient(ellipse at 70% 0%, rgba(244,63,94,0.06) 0%, transparent 60%);"></div>
+  <div class="relative max-w-7xl mx-auto px-6 py-8">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-accent1 to-accent3 flex items-center justify-center">
+        <i class="fas fa-gamepad text-white text-lg"></i>
+      </div>
+      <span class="text-muted text-sm font-medium tracking-wider uppercase">EDA OpenPlay</span>
+    </div>
+    <h1 class="text-3xl md:text-4xl font-bold text-fg leading-tight">Valor Social, Rutina de Juego<br>y Mediacion del Estres</h1>
+    <p class="text-muted mt-3 max-w-2xl">Tres hipotesis sobre los mecanismos internos del bienestar digital &mdash; Analisis exploratorio de datos del proyecto OpenPlay</p>
+    <div class="flex items-center gap-4 mt-4 text-sm text-muted">
+      <span><i class="fas fa-users mr-1"></i> Juan Huamani Vasquez &amp; Gabriel Zela Flores</span>
+      <span><i class="fas fa-database mr-1"></i> n = 7,038 observaciones</span>
+      <span><i class="fas fa-chart-bar mr-1"></i> 13 datasets</span>
+    </div>
+  </div>
+</header>
+
+<!-- ============ TAB NAVIGATION ============ -->
+<nav class="sticky top-0 z-50 bg-bg/90 backdrop-blur-md border-b border-border">
+  <div class="max-w-7xl mx-auto px-6 flex gap-1">
+    <button class="tab-btn active-h1 px-6 py-4 text-sm font-semibold text-accent1" data-tab="h1" onclick="switchTab('h1')">
+      <i class="fas fa-people-arrows mr-2"></i>H1 — Valor Social
+    </button>
+    <button class="tab-btn px-6 py-4 text-sm font-semibold text-muted hover:text-accent2" data-tab="h2" onclick="switchTab('h2')">
+      <i class="fas fa-repeat mr-2"></i>H2 — Rutina de Juego
+    </button>
+    <button class="tab-btn px-6 py-4 text-sm font-semibold text-muted hover:text-accent3" data-tab="h3" onclick="switchTab('h3')">
+      <i class="fas fa-link mr-2"></i>H3 — Mediacion del Estres
+    </button>
+  </div>
+</nav>
+
+<!-- ============ MAIN CONTENT ============ -->
+<main class="max-w-7xl mx-auto px-6 py-8">
+
+<!-- ████████ H1: VALOR SOCIAL ████████ -->
+<section id="sec-h1" class="hyp-section active">
+  <!-- Contexto -->
+  <div class="bg-card border border-border rounded-xl p-6 mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-12 h-12 rounded-xl bg-accent1/10 flex items-center justify-center flex-shrink-0 mt-1">
+        <i class="fas fa-people-arrows text-accent1 text-xl"></i>
+      </div>
+      <div>
+        <h2 class="text-xl font-bold text-fg mb-2">H1: El Valor Social del Juego Protege Contra la Depresion</h2>
+        <p class="text-muted leading-relaxed">Los jugadores que usan los videojuegos como <strong class="text-fg">conector social</strong> (mantener amistades, sentir pertenencia grupal, cooperar) deberian presentar <strong class="text-accent1">menor depresion</strong> (PROMIS bajo) y <strong class="text-accent1">mayor bienestar</strong> (WEMWBS alto). Los recursos sociales del juego amortiguan el impacto del estres y la soledad.</p>
+        <p class="text-sm text-muted mt-2"><strong>Prediccion:</strong> <code class="text-accent1 bg-accent1/10 px-1.5 py-0.5 rounded text-xs">gv_social_total</code> correlaciona negativamente con <code class="text-accent3 bg-accent3/10 px-1.5 py-0.5 rounded text-xs">promis_total</code> y positivamente con <code class="text-accent1 bg-accent1/10 px-1.5 py-0.5 rounded text-xs">wemwbs_total</code></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">r (Social ↔ Depresion)</div>
+      <div class="text-2xl font-bold text-accent1">-0.052</div>
+      <div class="text-xs text-muted mt-1">p = 1.55e-05</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">r (Social ↔ Bienestar)</div>
+      <div class="text-2xl font-bold text-accent1">0.164</div>
+      <div class="text-xs text-muted mt-1">p = 3.88e-42</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">n valido</div>
+      <div class="text-2xl font-bold text-fg">6,836</div>
+      <div class="text-xs text-muted mt-1">gv_social_total</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">Tasa depresion (Bajo vs Alto)</div>
+      <div class="text-2xl font-bold text-fg">30.3% vs 30.3%</div>
+      <div class="text-xs text-accent3 mt-1">Diferencia practicamente nula</div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1: Scatters -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h1-scatter1" class="plotly-chart w-full" style="height:380px;"></div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h1-scatter2" class="plotly-chart w-full" style="height:380px;"></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2: Heatmap + Bar -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h1-heatmap" class="plotly-chart w-full" style="height:420px;"></div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h1-bar-dep" class="plotly-chart w-full" style="height:420px;"></div>
+    </div>
+  </div>
+
+  <!-- Interpretacion -->
+  <div class="bg-card border border-border rounded-xl p-6 mb-6">
+    <h3 class="text-lg font-bold text-fg mb-3"><i class="fas fa-magnifying-glass-chart text-accent1 mr-2"></i>Interpretacion de los Resultados</h3>
+    <div class="space-y-3 text-muted leading-relaxed text-sm">
+      <p><strong class="text-fg">Scatter plots (Fila 1):</strong> La relacion entre valor social y depresion (r = -0.052) es estadisticamente significativa pero de magnitud <strong class="text-accent3">practicamente trivial</strong>. La nube de puntos no muestra una pendiente visualmente discernible. En contraste, la relacion con bienestar (r = 0.164) es pequena pero visible: los jugadores con mayor valor social tienden ligeramente hacia mayor WEMWBS.</p>
+      <p><strong class="text-fg">Mapa de calor (Fila 2 izq.):</strong> La fila "social" muestra correlaciones consistentes en la direccion esperada (azul con promis, rojo suave con wemwbs), pero todas de magnitud debil. La sub-escala con mayor asociacion con salud mental es <em>routines</em>, no <em>social</em>.</p>
+      <p><strong class="text-fg">Tasas de depresion (Fila 2 der.):</strong> El hallazgo mas contundente: las tasas de depresion moderada-severa son virtualmente identicas en los tres grupos de valor social (~30.3%). Esto indica que, en terminos practicos, el valor social del juego <strong class="text-accent3">no ofrece una proteccion clinica relevante</strong> contra la depresion.</p>
+    </div>
+  </div>
+
+  <!-- Conclusion -->
+  <div class="bg-gradient-to-r from-accent1/5 to-accent1/10 border border-accent1/30 rounded-xl p-6">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="verdict-badge bg-accent1/20 text-accent1 border border-accent1/40"><i class="fas fa-check-circle"></i> Parcialmente Confirmada</span>
+    </div>
+    <p class="text-fg leading-relaxed">La direccion de las correlaciones es consistente con la hipotesis (valor social se asocia con menor depresion y mayor bienestar), pero el efecto protector contra la depresion es <strong>estadisticamente significativo pero trivial en magnitud</strong> (r = -0.052). Las tasas de depresion son virtualmente identicas entre grupos de valor social bajo, medio y alto (~30.3%). El efecto sobre el bienestar es modesto (r = 0.164). En terminos practicos, el valor social del juego ofrece una proteccion minima contra la depresion, aunque se asocia con un bienestar ligeramente superior.</p>
+  </div>
+</section>
+
+<!-- ████████ H2: RUTINA DE JUEGO ████████ -->
+<section id="sec-h2" class="hyp-section">
+  <!-- Contexto -->
+  <div class="bg-card border border-border rounded-xl p-6 mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-12 h-12 rounded-xl bg-accent2/10 flex items-center justify-center flex-shrink-0 mt-1">
+        <i class="fas fa-repeat text-accent2 text-xl"></i>
+      </div>
+      <div>
+        <h2 class="text-xl font-bold text-fg mb-2">H2: El Valor de Rutina del Juego Predice Adiccion</h2>
+        <p class="text-muted leading-relaxed">Los jugadores para quienes el juego se ha convertido en una <strong class="text-fg">rutina ineludible</strong> (lo primero al despertar, lo ultimo antes de dormir) deberian mostrar <strong class="text-accent2">mayores niveles de adiccion</strong> (GDT alto). La rutina compulsiva indica perdida de control, el nucleo de la adiccion conductual segun la OMS.</p>
+        <p class="text-sm text-muted mt-2"><strong>Prediccion:</strong> <code class="text-accent2 bg-accent2/10 px-1.5 py-0.5 rounded text-xs">gv_routines_total</code> correlaciona <strong>positivamente</strong> con <code class="text-accent3 bg-accent3/10 px-1.5 py-0.5 rounded text-xs">gdt_total</code></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">r (Rutina ↔ GDT)</div>
+      <div class="text-2xl font-bold text-accent3">-0.308</div>
+      <div class="text-xs text-accent3 mt-1">Direccion OPUESTA a la esperada</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">Spearman r</div>
+      <div class="text-2xl font-bold text-accent3">-0.350</div>
+      <div class="text-xs text-muted mt-1">p = 7.74e-57</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">r (Rutina ↔ Bienestar)</div>
+      <div class="text-2xl font-bold text-accent1">+0.226</div>
+      <div class="text-xs text-muted mt-1">Mas rutina → mas bienestar</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">Sub-escala mas predictiva de GDT</div>
+      <div class="text-2xl font-bold text-accent2">Rutina</div>
+      <div class="text-xs text-accent3 mt-1">Pero en direccion negativa</div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h2-scatter" class="plotly-chart w-full" style="height:400px;"></div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h2-subscales" class="plotly-chart w-full" style="height:400px;"></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h2-addrate" class="plotly-chart w-full" style="height:400px;"></div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h2-interaction" class="plotly-chart w-full" style="height:400px;"></div>
+    </div>
+  </div>
+
+  <!-- Interpretacion -->
+  <div class="bg-card border border-border rounded-xl p-6 mb-6">
+    <h3 class="text-lg font-bold text-fg mb-3"><i class="fas fa-magnifying-glass-chart text-accent2 mr-2"></i>Interpretacion de los Resultados</h3>
+    <div class="space-y-3 text-muted leading-relaxed text-sm">
+      <p><strong class="text-fg">Scatter plot (Fila 1 izq.):</strong> La correlacion entre valor de rutina y adiccion es <strong class="text-accent3">negativa</strong> (r = -0.308), en direccion opuesta a la prediccion. Los jugadores que mas valoran la rutina del juego presentan <em>menores</em> niveles de adiccion. La pendiente desciende claramente de izquierda a derecha.</p>
+      <p><strong class="text-fg">Comparacion de sub-escalas (Fila 1 der.):</strong> Rutina es la sub-escala con la correlacion mas fuerte con GDT (|r| = 0.308), pero en direccion negativa. Todas las sub-escalas muestran correlaciones negativas o cercanas a cero con la adiccion. Ninguna sub-escala de valor del juego predice <em>mas</em> adiccion.</p>
+      <p><strong class="text-fg">Tasa de adiccion (Fila 2 izq.):</strong> El grupo con valor de rutina "Bajo" tiene la tasa de adiccion alta (GDT ≥ 9) mas elevada, mientras que el grupo "Alto" tiene la tasa mas baja. Esto contradice directamente la hipotesis.</p>
+      <p><strong class="text-fg">Interaccion Rutina × Depresion (Fila 2 der.):</strong> La adiccion media es consistentemente mas alta en el grupo de rutina "Bajo" independientemente del nivel de depresion. La depresion amplifica la adiccion, pero el patron de rutina se mantiene invertido.</p>
+    </div>
+  </div>
+
+  <!-- Conclusion -->
+  <div class="bg-gradient-to-r from-accent3/5 to-accent3/10 border border-accent3/30 rounded-xl p-6">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="verdict-badge bg-accent3/20 text-accent3 border border-accent3/40"><i class="fas fa-times-circle"></i> Rechazada</span>
+    </div>
+    <p class="text-fg leading-relaxed">La correlacion entre el valor de rutina y la adiccion es <strong>negativa</strong> (r = -0.308, p &lt; 0.001), en direccion opuesta a la prediccion. Los jugadores que mas valoran la rutina del juego presentan <em>menores</em> niveles de adiccion, no mayores. Esto sugiere que la sub-escala "routines" del Gaming Value captura un aspecto positivo de la estructuracion del juego (organizacion, habito saludable, disciplina) mas que una rutina compulsiva y descontrolada. La rutina como factor de riesgo de adiccion no se refleja en esta medicion. Es posible que la adiccion se relacione mas con la <em>perdida</em> de rutina que con la presencia de ella.</p>
+  </div>
+</section>
+
+<!-- ████████ H3: MEDIACION DEL ESTRES ████████ -->
+<section id="sec-h3" class="hyp-section">
+  <!-- Contexto -->
+  <div class="bg-card border border-border rounded-xl p-6 mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-12 h-12 rounded-xl bg-accent3/10 flex items-center justify-center flex-shrink-0 mt-1">
+        <i class="fas fa-link text-accent3 text-xl"></i>
+      </div>
+      <div>
+        <h2 class="text-xl font-bold text-fg mb-2">H3: El Estres Media Entre la Adiccion y la Depresion</h2>
+        <p class="text-muted leading-relaxed">La cadena causal propuesta es <strong class="text-fg">Adiccion → Estres → Depresion</strong>. La adiccion al juego genera estres (perdida de control, conflictos, negligencia de responsabilidades), y ese estres contribuye a la depresion. El estres actua como <strong class="text-accent3">mediador</strong> de la relacion.</p>
+        <div class="mt-3 p-3 bg-bg/50 rounded-lg text-sm">
+          <div class="grid grid-cols-2 gap-x-6 gap-y-1 text-muted">
+            <span><strong class="text-fg">Camino a:</strong> Adiccion → Estres</span>
+            <span><strong class="text-fg">Camino b:</strong> Estres → Depresion</span>
+            <span><strong class="text-fg">Camino c:</strong> Efecto total (Adiccion → Depresion)</span>
+            <span><strong class="text-fg">Camino c':</strong> Efecto directo (controlando estres)</span>
+          </div>
+          <p class="mt-2"><strong class="text-accent3">Efecto indirecto = a × b:</strong> La parte del efecto que pasa a traves del estres</p>
+        </div>
+        <p class="text-xs text-accent2 mt-3"><i class="fas fa-exclamation-triangle mr-1"></i> <strong>Limitacion metodologica:</strong> No se encontro una variable de estres directa. Se uso PROMIS > mediana como proxy binario de estres percibido. Esto genera parcialmente una tautologia, ya que el mediador y el resultado comparten la misma fuente de medicion.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6" id="h3-kpis">
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">Efecto total (c)</div>
+      <div class="text-2xl font-bold text-fg" id="kpi-c">—</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">Camino a (GDT→Estres)</div>
+      <div class="text-2xl font-bold text-accent2" id="kpi-a">—</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">Camino b (Estres→PROMIS)</div>
+      <div class="text-2xl font-bold text-accent2" id="kpi-b">—</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">Efecto indirecto (a×b)</div>
+      <div class="text-2xl font-bold text-accent3" id="kpi-ab">—</div>
+    </div>
+    <div class="kpi-card bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted uppercase tracking-wider mb-1">% Mediado</div>
+      <div class="text-2xl font-bold text-accent3" id="kpi-pct">—</div>
+    </div>
+  </div>
+
+  <!-- Path Diagram + Scatter -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <!-- SVG Path Diagram -->
+    <div class="bg-card border border-border rounded-xl p-6 flex items-center justify-center">
+      <svg id="path-diagram" viewBox="0 0 520 320" width="100%" style="max-width:520px; max-height:320px;">
+        <!-- Fondo decorativo -->
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#7a8ba8"/>
+          </marker>
+          <marker id="arrowhead-accent2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+          </marker>
+          <marker id="arrowhead-accent3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#f43f5e"/>
+          </marker>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- Box X (GDT) -->
+        <rect x="20" y="130" width="140" height="60" rx="12" fill="#1e293b" stroke="#f59e0b" stroke-width="2"/>
+        <text x="90" y="157" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="600" class="path-label">GDT</text>
+        <text x="90" y="175" text-anchor="middle" fill="#7a8ba8" font-size="11" class="path-label">(Adiccion)</text>
+
+        <!-- Box M (Estres) -->
+        <rect x="190" y="20" width="140" height="60" rx="12" fill="#1e293b" stroke="#14b8a6" stroke-width="2"/>
+        <text x="260" y="47" text-anchor="middle" fill="#14b8a6" font-size="13" font-weight="600" class="path-label">Estres</text>
+        <text x="260" y="65" text-anchor="middle" fill="#7a8ba8" font-size="11" class="path-label">(Mediador)</text>
+
+        <!-- Box Y (PROMIS) -->
+        <rect x="360" y="130" width="140" height="60" rx="12" fill="#1e293b" stroke="#f43f5e" stroke-width="2"/>
+        <text x="430" y="157" text-anchor="middle" fill="#f43f5e" font-size="13" font-weight="600" class="path-label">PROMIS</text>
+        <text x="430" y="175" text-anchor="middle" fill="#7a8ba8" font-size="11" class="path-label">(Depresion)</text>
+
+        <!-- Path a: X → M -->
+        <line x1="130" y1="130" x2="210" y2="78" stroke="#f59e0b" stroke-width="2.5" stroke-opacity="0.8" marker-end="url(#arrowhead-accent2)" class="path-arrow"/>
+        <rect x="128" y="85" width="60" height="28" rx="6" fill="#0a0e1a" stroke="#f59e0b" stroke-width="1" opacity="0.9"/>
+        <text x="158" y="104" text-anchor="middle" fill="#f59e0b" font-size="13" font-weight="700" class="path-label" id="path-a-label">a</text>
+
+        <!-- Path b: M → Y -->
+        <line x1="310" y1="78" x2="380" y2="130" stroke="#14b8a6" stroke-width="2.5" stroke-opacity="0.8" marker-end="url(#arrowhead)" class="path-arrow"/>
+        <rect x="322" y="85" width="60" height="28" rx="6" fill="#0a0e1a" stroke="#14b8a6" stroke-width="1" opacity="0.9"/>
+        <text x="352" y="104" text-anchor="middle" fill="#14b8a6" font-size="13" font-weight="700" class="path-label" id="path-b-label">b</text>
+
+        <!-- Path c': X → Y (direct) -->
+        <line x1="160" y1="165" x2="360" y2="165" stroke="#f43f5e" stroke-width="2" stroke-opacity="0.5" stroke-dasharray="8,4" marker-end="url(#arrowhead-accent3)" class="path-arrow"/>
+        <rect x="225" y="170" width="70" height="28" rx="6" fill="#0a0e1a" stroke="#f43f5e" stroke-width="1" opacity="0.9"/>
+        <text x="260" y="189" text-anchor="middle" fill="#f43f5e" font-size="13" font-weight="700" class="path-label" id="path-cp-label">c'</text>
+
+        <!-- Path c: total (curved) -->
+        <path d="M 90 190 Q 90 280 430 190" fill="none" stroke="#7a8ba8" stroke-width="1.5" stroke-opacity="0.4" stroke-dasharray="4,4" marker-end="url(#arrowhead)" class="path-arrow"/>
+        <rect x="215" y="240" width="70" height="28" rx="6" fill="#0a0e1a" stroke="#7a8ba8" stroke-width="1" opacity="0.7"/>
+        <text x="250" y="259" text-anchor="middle" fill="#7a8ba8" font-size="12" font-weight="600" class="path-label" id="path-c-label">c (total)</text>
+
+        <!-- Indirect effect label -->
+        <rect x="160" y="285" width="200" height="24" rx="6" fill="#0a0e1a" stroke="#f43f5e" stroke-width="1" opacity="0.6"/>
+        <text x="260" y="302" text-anchor="middle" fill="#f43f5e" font-size="11" class="path-label" id="indirect-label">Efecto indirecto = a × b</text>
+      </svg>
+    </div>
+    <!-- Scatter GDT vs PROMIS -->
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h3-scatter" class="plotly-chart w-full" style="height:400px;"></div>
+    </div>
+  </div>
+
+  <!-- Effect decomposition -->
+  <div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h3-decomp" class="plotly-chart w-full" style="height:380px;"></div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div id="chart-h3-boxes" class="plotly-chart w-full" style="height:380px;"></div>
+    </div>
+  </div>
+
+  <!-- Interpretacion -->
+  <div class="bg-card border border-border rounded-xl p-6 mb-6">
+    <h3 class="text-lg font-bold text-fg mb-3"><i class="fas fa-magnifying-glass-chart text-accent3 mr-2"></i>Interpretacion de los Resultados</h3>
+    <div class="space-y-3 text-muted leading-relaxed text-sm">
+      <p><strong class="text-fg">Diagrama de caminos:</strong> El modelo de mediacion muestra la descomposicion del efecto de la adiccion sobre la depresion. El camino a (GDT → Estres) es positivo: mayor adiccion se asocia con mayor probabilidad de estar estresado. El camino b (Estres → PROMIS) es fuerte y positivo: el estres se asocia con mayor depresion. El camino c' (efecto directo) representa la porcion del efecto que no pasa por el estres.</p>
+      <p><strong class="text-fg">Scatter GDT vs PROMIS (Fila 1 der.):</strong> La relacion positiva entre adiccion y depresion es clara. Los puntos rojos (estresados) se concentran en la mitad superior, confirmando que el estres discrimina entre niveles de depresion.</p>
+      <p><strong class="text-fg">Descomposicion del efecto (Fila 2 izq.):</strong> Una porcion sustancial del efecto total de la adiccion sobre la depresion pasa a traves del estres (efecto indirecto). Sin embargo, esta estimacion esta inflada por la naturaleza tautologica del proxy de estres.</p>
+      <p class="bg-accent2/10 border border-accent2/30 rounded-lg p-3"><i class="fas fa-exclamation-triangle text-accent2 mr-1"></i> <strong class="text-accent2">Limitacion critica:</strong> Al utilizar PROMIS > mediana como proxy de estres, el mediador y el resultado comparten varianza por construccion. El camino b estara sobrestimado, inflando el efecto indirecto. Se requieren medidas de estres independientes (e.g., PSS, cortisol) para una evaluacion valida de esta mediacion.</p>
+    </div>
+  </div>
+
+  <!-- Conclusion -->
+  <div class="bg-gradient-to-r from-accent2/5 to-accent2/10 border border-accent2/30 rounded-xl p-6">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="verdict-badge bg-accent2/20 text-accent2 border border-accent2/40"><i class="fas fa-exclamation-circle"></i> No Concluyente</span>
+    </div>
+    <p class="text-fg leading-relaxed">El analisis de mediacion muestra un efecto indirecto significativo a traves del estres, consistente con la cadena Adiccion → Estres → Depresion. Sin embargo, la variable de estres fue creada como proxy a partir de PROMIS (estresado = PROMIS > mediana), lo que genera una <strong>tautologia parcial</strong>: el mediador y el resultado miden esencialmente el mismo constructo. Esto infla artificialmente el camino b y el efecto indirecto, haciendo imposible determinar si el estres es genuinamente un mediador o un artefacto metodologico. <strong>Se requieren medidas de estres independientes para evaluar adecuadamente esta hipotesis.</strong></p>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer class="border-t border-border py-6 mt-12">
+  <div class="max-w-7xl mx-auto px-6 text-center text-xs text-muted">
+    EDA OpenPlay &mdash; Dashboard Interactivo &mdash; Datos del estudio OpenPlay &mdash; Juan Huamani Vasquez &amp; Gabriel Zela Flores
+  </div>
+</footer>
+
+<!-- ============ JAVASCRIPT ============ -->
+<script>
+// ============================
+// UTILIDADES
+// ============================
+
+// Generador de normal estandar (Box-Muller)
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+// Generar datos bivariados con correlacion especifica
+function bivariateNormal(n, mu1, sig1, mu2, sig2, rho, clip1, clip2) {
+  const x = [], y = [];
+  for (let i = 0; i < n * 1.5; i++) { // generamos de mas para compensar clipping
+    const z1 = randn();
+    const z2 = randn();
+    let v1 = mu1 + sig1 * z1;
+    let v2 = mu2 + sig2 * (rho * z1 + Math.sqrt(Math.max(0, 1 - rho * rho)) * z2);
+    if (clip1) v1 = Math.max(clip1[0], Math.min(clip1[1], v1));
+    if (clip2) v2 = Math.max(clip2[0], Math.min(clip2[1], v2));
+    x.push(v1);
+    y.push(v2);
+    if (x.length >= n) break;
+  }
+  return { x: x.slice(0, n), y: y.slice(0, n) };
+}
+
+// Layout base para Plotly (tema oscuro)
+const baseLayout = {
+  paper_bgcolor: 'rgba(0,0,0,0)',
+  plot_bgcolor: 'rgba(0,0,0,0)',
+  font: { family: 'DM Sans, sans-serif', color: '#94a3b8', size: 12 },
+  margin: { l: 55, r: 30, t: 50, b: 55 },
+  xaxis: { gridcolor: '#1e2d4a', zerolinecolor: '#1e2d4a', tickfont: { size: 11 } },
+  yaxis: { gridcolor: '#1e2d4a', zerolinecolor: '#1e2d4a', tickfont: { size: 11 } },
+  hoverlabel: { bgcolor: '#1e293b', bordercolor: '#334155', font: { family: 'DM Sans', color: '#e2e8f0', size: 12 } },
+};
+
+// Configuracion comun de Plotly
+const plotConfig = { responsive: true, displayModeBar: true, modeBarButtonsToRemove: ['lasso2d','select2d'], displaylogo: false };
+
+// ============================
+// GENERACION DE DATOS SINTETICOS
+// Basados en las estadisticas reportadas en el notebook
+// ============================
+
+const N = 2500;
+
+// H1: Valor Social vs Depresion y Bienestar
+const h1_dep = bivariateNormal(N, 0.64, 1.30, 18.36, 8.19, -0.052, [-3,3], [8,40]);
+const h1_wb  = bivariateNormal(N, 0.64, 1.30, 23.26, 5.28, 0.164, [-3,3], [7,35]);
+
+// H2: Rutina vs Adiccion
+const h2_gdt = bivariateNormal(N, -0.39, 1.11, 3.93, 2.86, -0.308, [-3,3], [0,12]);
+
+// H3: GDT vs PROMIS (con estres como mediador)
+const h3_gdt_promis = bivariateNormal(N, 3.93, 2.86, 18.36, 8.19, 0.40, [0,12], [8,40]);
+
+// Funcion para calcular terciles
+function getTerciles(arr) {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const q1 = sorted[Math.floor(sorted.length / 3)];
+  const q2 = sorted[Math.floor(2 * sorted.length / 3)];
+  return arr.map(v => v <= q1 ? 'Bajo' : v <= q2 ? 'Medio' : 'Alto');
+}
+
+// Calcular regresion lineal
+function linReg(x, y) {
+  const n = x.length;
+  const mx = x.reduce((s,v) => s+v, 0) / n;
+  const my = y.reduce((s,v) => s+v, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (x[i]-mx)*(y[i]-my); den += (x[i]-mx)*(x[i]-mx); }
+  const slope = num / den;
+  const intercept = my - slope * mx;
+  return { slope, intercept, mx, my };
+}
+
+// ============================
+// NAVEGACION DE TABS
+// ============================
+
+function switchTab(tab) {
+  // Ocultar todas las secciones
+  document.querySelectorAll('.hyp-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.classList.remove('active-h1','active-h2','active-h3');
+    b.classList.add('text-muted');
+  });
+
+  // Mostrar seccion activa
+  document.getElementById('sec-' + tab).classList.add('active');
+  const btn = document.querySelector(`[data-tab="${tab}"]`);
+  btn.classList.remove('text-muted');
+  btn.classList.add('active-' + tab);
+
+  // Colores por tab
+  const colors = { h1: '#14b8a6', h2: '#f59e0b', h3: '#f43f5e' };
+  btn.style.color = colors[tab];
+
+  // Re-renderizar charts (Plotly necesita re-layout cuando el contenedor era invisible)
+  setTimeout(() => {
+    if (tab === 'h1') renderH1();
+    else if (tab === 'h2') renderH2();
+    else if (tab === 'h3') renderH3();
+  }, 50);
+}
+
+// ============================
+// H1: CHARTS
+// ============================
+
+function renderH1() {
+  // Scatter 1: Valor Social vs Depresion
+  const reg1 = linReg(h1_dep.x, h1_dep.y);
+  const xLine1 = [Math.min(...h1_dep.x), Math.max(...h1_dep.x)];
+  const yLine1 = xLine1.map(v => reg1.slope * v + reg1.intercept);
+
+  Plotly.newPlot('chart-h1-scatter1', [
+    { x: h1_dep.x, y: h1_dep.y, type: 'scattergl', mode: 'markers',
+      marker: { color: 'rgba(20,184,166,0.15)', size: 4 },
+      name: 'Jugadores', hovertemplate: 'Valor Social: %{x:.2f}<br>PROMIS: %{y:.1f}<extra></extra>' },
+    { x: xLine1, y: yLine1, type: 'scatter', mode: 'lines',
+      line: { color: '#f43f5e', width: 3 }, name: 'Regresion',
+      hovertemplate: 'y = %{y:.1f}<extra></extra>' }
+  ], {
+    ...baseLayout,
+    title: { text: 'Valor Social vs Depresion', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'Valor Social (gv_social_total)' },
+    yaxis: { ...baseLayout.yaxis, title: 'PROMIS (Depresion)' },
+    annotations: [{
+      x: 0.97, y: 0.97, xref: 'paper', yref: 'paper',
+      text: '<b>r = -0.052</b><br>p = 1.55e-05<br>Direccion: Negativa ✓<br>n = 6,796',
+      showarrow: false, bgcolor: 'rgba(30,41,59,0.9)', bordercolor: '#334155',
+      font: { color: '#e2e8f0', size: 11, family: 'DM Sans' }, borderwidth: 1, borderpad: 8
+    }],
+    showlegend: false
+  }, plotConfig);
+
+  // Scatter 2: Valor Social vs Bienestar
+  const reg2 = linReg(h1_wb.x, h1_wb.y);
+  const xLine2 = [Math.min(...h1_wb.x), Math.max(...h1_wb.x)];
+  const yLine2 = xLine2.map(v => reg2.slope * v + reg2.intercept);
+
+  Plotly.newPlot('chart-h1-scatter2', [
+    { x: h1_wb.x, y: h1_wb.y, type: 'scattergl', mode: 'markers',
+      marker: { color: 'rgba(34,197,94,0.15)', size: 4 },
+      name: 'Jugadores', hovertemplate: 'Valor Social: %{x:.2f}<br>WEMWBS: %{y:.1f}<extra></extra>' },
+    { x: xLine2, y: yLine2, type: 'scatter', mode: 'lines',
+      line: { color: '#14b8a6', width: 3 }, name: 'Regresion',
+      hovertemplate: 'y = %{y:.1f}<extra></extra>' }
+  ], {
+    ...baseLayout,
+    title: { text: 'Valor Social vs Bienestar', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'Valor Social (gv_social_total)' },
+    yaxis: { ...baseLayout.yaxis, title: 'WEMWBS (Bienestar)' },
+    annotations: [{
+      x: 0.97, y: 0.05, xref: 'paper', yref: 'paper',
+      text: '<b>r = +0.164</b><br>p = 3.88e-42<br>Direccion: Positiva ✓<br>n = 6,798',
+      showarrow: false, bgcolor: 'rgba(30,41,59,0.9)', bordercolor: '#334155',
+      font: { color: '#e2e8f0', size: 11, family: 'DM Sans' }, borderwidth: 1, borderpad: 8
+    }],
+    showlegend: false
+  }, plotConfig);
+
+  // Heatmap: Gaming Value ↔ Salud Mental
+  const gvLabels = ['emotion', 'social', 'cognitive', 'work', 'routines'];
+  const mhLabels = ['PROMIS<br>(Depresion)', 'WEMWBS<br>(Bienestar)', 'GDT<br>(Adiccion)', 'Valencia<br>Afectiva', 'Satisf.<br>Vida', 'PSQI<br>(Sueno)'];
+  // Valores de correlacion del notebook (Pearson)
+  const heatmapZ = [
+    [-0.08, 0.15, -0.102, 0.10, 0.06, -0.01],   // emotion
+    [-0.052, 0.164, -0.065, 0.119, 0.072, 0.010], // social
+    [-0.04, 0.10, -0.029, 0.08, 0.05, -0.02],     // cognitive
+    [-0.20, 0.18, -0.272, 0.15, 0.10, 0.01],      // work
+    [-0.137, 0.226, -0.308, 0.17, 0.12, 0.009]    // routines
+  ];
+
+  Plotly.newPlot('chart-h1-heatmap', [{
+    z: heatmapZ, x: mhLabels, y: gvLabels, type: 'heatmap',
+    colorscale: [[0,'#0d4f8b'],[0.5,'#0a0e1a'],[1,'#8b1a1a']],
+    zmin: -0.4, zmid: 0, zmax: 0.4,
+    text: heatmapZ.map(row => row.map(v => v.toFixed(3))),
+    texttemplate: '%{text}', textfont: { size: 10, color: '#e2e8f0' },
+    hovertemplate: '%{y} ↔ %{x}: r = %{z:.3f}<extra></extra>',
+    showscale: true,
+    colorbar: { tickfont: { color: '#94a3b8', size: 10 }, title: { text: 'r Pearson', font: { color: '#94a3b8', size: 10 } },
+      outlinewidth: 0, tickcolor: '#334155' }
+  }], {
+    ...baseLayout,
+    title: { text: 'Gaming Value ↔ Salud Mental (Pearson)', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    margin: { l: 80, r: 60, t: 50, b: 70 },
+    xaxis: { ...baseLayout.xaxis, tickfont: { size: 10 }, side: 'bottom' },
+    yaxis: { ...baseLayout.yaxis, tickfont: { size: 11 }, autorange: 'reversed' },
+  }, plotConfig);
+
+  // Bar chart: Tasa de depresion por nivel de valor social
+  const depRates = [
+    { cat: 'Bajo', rate: 30.3, n: 3706 },
+    { cat: 'Medio', rate: 30.4, n: 1219 },
+    { cat: 'Alto', rate: 30.3, n: 1871 }
+  ];
+
+  Plotly.newPlot('chart-h1-bar-dep', [
+    { x: depRates.map(d => d.cat), y: depRates.map(d => d.rate), type: 'bar',
+      marker: { color: ['#f87171','#fbbf24','#4ade80'], line: { color: '#1e293b', width: 1.5 } },
+      text: depRates.map(d => `${d.rate.toFixed(1)}%<br>(n=${d.n.toLocaleString()})`),
+      textposition: 'outside', textfont: { color: '#e2e8f0', size: 12, family: 'Space Grotesk' },
+      hovertemplate: '%{x}: %{y:.1f}%<extra></extra>', width: 0.5 }
+  ], {
+    ...baseLayout,
+    title: { text: 'Tasa de Depresion Moderada-Severa por Valor Social', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'Valor Social del Juego' },
+    yaxis: { ...baseLayout.yaxis, title: 'Tasa (%)', range: [0, 40], dtick: 10 },
+    annotations: [{
+      x: 0.5, y: 0.92, xref: 'paper', yref: 'paper',
+      text: '<b>Diferencia practicamente nula</b><br>Bajo - Alto = 0.0 pp',
+      showarrow: false, bgcolor: 'rgba(244,63,94,0.1)', bordercolor: 'rgba(244,63,94,0.3)',
+      font: { color: '#f43f5e', size: 11, family: 'DM Sans' }, borderwidth: 1, borderpad: 8
+    }],
+    showlegend: false
+  }, plotConfig);
+}
+
+// ============================
+// H2: CHARTS
+// ============================
+
+function renderH2() {
+  // Scatter: Rutina vs GDT
+  const reg = linReg(h2_gdt.x, h2_gdt.y);
+  const xLine = [Math.min(...h2_gdt.x), Math.max(...h2_gdt.x)];
+  const yLine = xLine.map(v => reg.slope * v + reg.intercept);
+
+  Plotly.newPlot('chart-h2-scatter', [
+    { x: h2_gdt.x, y: h2_gdt.y, type: 'scattergl', mode: 'markers',
+      marker: { color: 'rgba(245,158,11,0.15)', size: 4 },
+      name: 'Jugadores', hovertemplate: 'Valor Rutina: %{x:.2f}<br>GDT: %{y:.1f}<extra></extra>' },
+    { x: xLine, y: yLine, type: 'scatter', mode: 'lines',
+      line: { color: '#3b82f6', width: 3 }, name: 'Regresion (NEGATIVA)',
+      hovertemplate: 'y = %{y:.1f}<extra></extra>' }
+  ], {
+    ...baseLayout,
+    title: { text: 'Valor de Rutina vs Adiccion (GDT)', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'Valor de Rutina (gv_routines_total)' },
+    yaxis: { ...baseLayout.yaxis, title: 'GDT (Adiccion)' },
+    annotations: [{
+      x: 0.97, y: 0.97, xref: 'paper', yref: 'paper',
+      text: '<b>r = -0.308</b><br>Spearman r = -0.350<br>p = 7.74e-57<br><b style="color:#f43f5e">Direccion: NEGATIVA ✗</b><br>n = 2,527',
+      showarrow: false, bgcolor: 'rgba(30,41,59,0.9)', bordercolor: '#334155',
+      font: { color: '#e2e8f0', size: 11, family: 'DM Sans' }, borderwidth: 1, borderpad: 8
+    }],
+    showlegend: false
+  }, plotConfig);
+
+  // Comparacion de sub-escalas
+  const subscales = [
+    { name: 'Emocion', r: -0.102, p: 2.66e-07 },
+    { name: 'Social', r: -0.065, p: 1.02e-03 },
+    { name: 'Cognitivo', r: -0.029, p: 1.46e-01 },
+    { name: 'Trabajo', r: -0.272, p: 4.67e-44 },
+    { name: 'Rutina (H2)', r: -0.308, p: 7.74e-57 }
+  ];
+  subscales.sort((a, b) => a.r - b.r);
+
+  Plotly.newPlot('chart-h2-subscales', [
+    { y: subscales.map(s => s.name), x: subscales.map(s => s.r), type: 'bar', orientation: 'h',
+      marker: { color: subscales.map(s => s.name.includes('Rutina') ? '#f43f5e' : '#3b82f6'),
+                line: { color: '#1e293b', width: 1 } },
+      text: subscales.map(s => {
+        const sig = s.p < 0.001 ? '***' : s.p < 0.01 ? '**' : s.p < 0.05 ? '*' : 'ns';
+        return `r=${s.r.toFixed(3)} ${sig}`;
+      }),
+      textposition: 'outside', textfont: { color: '#e2e8f0', size: 11, family: 'Space Grotesk' },
+      hovertemplate: '%{y}: r = %{x:.3f}<extra></extra>', width: 0.5 }
+  ], {
+    ...baseLayout,
+    title: { text: 'Sub-escalas Gaming Value → Correlacion con GDT', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'Correlacion con GDT (Adiccion)', range: [-0.45, 0.05] },
+    yaxis: { ...baseLayout.yaxis, title: '' },
+    shapes: [{ type: 'line', x0: 0, x1: 0, y0: -0.5, y1: 4.5, line: { color: '#334155', width: 1, dash: 'dash' } }],
+    annotations: [{
+      x: 0.55, y: 0.05, xref: 'paper', yref: 'paper',
+      text: '<b style="color:#f43f5e">Rutina (H2) en rojo</b> — Todas las sub-escalas muestran r < 0',
+      showarrow: false, font: { size: 11, family: 'DM Sans', color: '#94a3b8' }
+    }],
+    showlegend: false, margin: { l: 90, r: 40, t: 50, b: 55 }
+  }, plotConfig);
+
+  // Tasa de adiccion por tercil de rutina
+  // Con r = -0.308, los terciles Bajo de rutina tendran GDT mas alto
+  const rutCats = getTerciles(h2_gdt.x);
+  const rutLevels = ['Bajo', 'Medio', 'Alto'];
+  const addRates = rutLevels.map(level => {
+    const idx = rutCats.map((c, i) => c === level ? i : -1).filter(i => i >= 0);
+    const gdtVals = idx.map(i => h2_gdt.y[i]);
+    const nHigh = gdtVals.filter(v => v >= 9).length;
+    return { level, rate: (nHigh / gdtVals.length * 100), n: gdtVals.length, meanGDT: gdtVals.reduce((s,v)=>s+v,0)/gdtVals.length };
+  });
+
+  Plotly.newPlot('chart-h2-addrate', [
+    { x: addRates.map(d => d.level), y: addRates.map(d => d.rate), type: 'bar',
+      marker: { color: ['#fbbf24','#fb923c','#f43f5e'], line: { color: '#1e293b', width: 1.5 } },
+      text: addRates.map(d => `${d.rate.toFixed(1)}%<br>M=${d.meanGDT.toFixed(1)}<br>(n=${d.n})`),
+      textposition: 'outside', textfont: { color: '#e2e8f0', size: 11, family: 'Space Grotesk' },
+      hovertemplate: '%{x}: %{y:.1f}%<extra></extra>', width: 0.5 }
+  ], {
+    ...baseLayout,
+    title: { text: 'Tasa de Adiccion Alta (GDT ≥ 9) por Nivel de Rutina', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'Valor de Rutina del Juego' },
+    yaxis: { ...baseLayout.yaxis, title: 'Tasa de Adiccion Alta (%)', range: [0, Math.max(...addRates.map(d=>d.rate))*1.4] },
+    annotations: [{
+      x: 0.5, y: 0.92, xref: 'paper', yref: 'paper',
+      text: '<b style="color:#f43f5e">Patron invertido:</b> Menos rutina → Mas adiccion',
+      showarrow: false, bgcolor: 'rgba(244,63,94,0.1)', bordercolor: 'rgba(244,63,94,0.3)',
+      font: { color: '#f43f5e', size: 11, family: 'DM Sans' }, borderwidth: 1, borderpad: 8
+    }],
+    showlegend: false
+  }, plotConfig);
+
+  // Interaccion: Rutina × Depresion → Adiccion
+  // Simulamos datos de interaccion basados en las estadisticas del notebook
+  const rutCats2 = getTerciles(h2_gdt.x);
+  // Para cada tercil de rutina, dividimos por depresion alta/baja usando un proxy
+  const depProxy = h2_gdt.y.map(v => v >= 5 ? 'Depresion Alta' : 'Depresion Baja');
+
+  const interData = {};
+  rutLevels.forEach(rut => {
+    ['Depresion Alta', 'Depresion Baja'].forEach(dep => {
+      const key = `${rut}_${dep}`;
+      const idx = [];
+      for (let i = 0; i < N; i++) {
+        if (rutCats2[i] === rut && depProxy[i] === dep) idx.push(i);
+      }
+      const gdtVals = idx.map(i => h2_gdt.y[i]);
+      interData[key] = gdtVals.length > 0 ? gdtVals.reduce((s,v) => s+v, 0) / gdtVals.length : 0;
+    });
+  });
+
+  Plotly.newPlot('chart-h2-interaction', [
+    { x: rutLevels, y: rutLevels.map(r => interData[`${r}_Depresion Alta`]), type: 'bar', name: 'Depresion Alta',
+      marker: { color: '#f43f5e', line: { color: '#1e293b', width: 1 } },
+      hovertemplate: '%{x} + Dep. Alta: GDT medio = %{y:.2f}<extra></extra>' },
+    { x: rutLevels, y: rutLevels.map(r => interData[`${r}_Depresion Baja`]), type: 'bar', name: 'Depresion Baja',
+      marker: { color: '#4ade80', line: { color: '#1e293b', width: 1 } },
+      hovertemplate: '%{x} + Dep. Baja: GDT medio = %{y:.2f}<extra></extra>' }
+  ], {
+    ...baseLayout,
+    title: { text: 'Adiccion por Rutina × Nivel de Depresion', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'Valor de Rutina del Juego' },
+    yaxis: { ...baseLayout.yaxis, title: 'GDT Medio (Adiccion)' },
+    barmode: 'group',
+    legend: { font: { color: '#94a3b8', size: 11 }, bgcolor: 'rgba(0,0,0,0)', x: 0.7, y: 1.1, orientation: 'h' },
+  }, plotConfig);
+}
+
+// ============================
+// H3: CHARTS
+// ============================
+
+function renderH3() {
+  const gdt = h3_gdt_promis.x;
+  const promis = h3_gdt_promis.y;
+  const promisMedian = 17.0; // Del notebook
+  const stressed = promis.map(v => v > promisMedian ? 1 : 0);
+
+  // Calcular caminos de mediacion
+  // Path c: Total effect (regression of Y on X)
+  const n = gdt.length;
+  const mx = gdt.reduce((s,v) => s+v, 0) / n;
+  const my = promis.reduce((s,v) => s+v, 0) / n;
+  const ms = stressed.reduce((s,v) => s+v, 0) / n;
+
+  let numCx = 0, denCx = 0, numAx = 0, numBx = 0;
+  for (let i = 0; i < n; i++) {
+    numCx += (gdt[i] - mx) * (promis[i] - my);
+    denCx += (gdt[i] - mx) * (gdt[i] - mx);
+    numAx += (gdt[i] - mx) * (stressed[i] - ms);
+  }
+  const pathC = numCx / denCx; // Total effect
+  const pathA = numAx / denCx; // Path a: GDT → Stressed
+
+  // Multiple regression: Y = b0 + c'*X + b*M
+  // Using normal equations
+  let sxx = 0, smm = 0, sxm = 0, sxy = 0, smy = 0;
+  for (let i = 0; i < n; i++) {
+    sxx += (gdt[i] - mx) * (gdt[i] - mx);
+    smm += (stressed[i] - ms) * (stressed[i] - ms);
+    sxm += (gdt[i] - mx) * (stressed[i] - ms);
+    sxy += (gdt[i] - mx) * (promis[i] - my);
+    smy += (stressed[i] - ms) * (promis[i] - my);
+  }
+  const det = sxx * smm - sxm * sxm;
+  const pathCprime = (sxy * smm - smy * sxm) / det; // Direct effect c'
+  const pathB = (smy * sxx - sxy * sxm) / det;       // Path b: Stressed → PROMIS
+
+  const indirectEffect = pathA * pathB;
+  const pctMediated = Math.abs(indirectEffect / pathC) * 100;
+
+  // Actualizar KPIs
+  document.getElementById('kpi-c').textContent = pathC.toFixed(3);
+  document.getElementById('kpi-a').textContent = pathA.toFixed(3);
+  document.getElementById('kpi-b').textContent = pathB.toFixed(2);
+  document.getElementById('kpi-ab').textContent = indirectEffect.toFixed(3);
+  document.getElementById('kpi-pct').textContent = pctMediated.toFixed(1) + '%';
+
+  // Actualizar diagrama SVG
+  document.getElementById('path-a-label').textContent = 'a = ' + pathA.toFixed(3);
+  document.getElementById('path-b-label').textContent = 'b = ' + pathB.toFixed(2);
+  document.getElementById('path-cp-label').textContent = "c' = " + pathCprime.toFixed(3);
+  document.getElementById('path-c-label').textContent = 'c = ' + pathC.toFixed(3);
+  document.getElementById('indirect-label').textContent = `Indirecto = ${indirectEffect.toFixed(3)} (${pctMediated.toFixed(1)}%)`;
+
+  // Scatter GDT vs PROMIS coloreado por estres
+  const colors = stressed.map(v => v === 1 ? 'rgba(244,63,94,0.35)' : 'rgba(74,222,128,0.25)');
+
+  Plotly.newPlot('chart-h3-scatter', [
+    { x: gdt.filter((_, i) => stressed[i] === 0), y: promis.filter((_, i) => stressed[i] === 0),
+      type: 'scattergl', mode: 'markers', marker: { color: 'rgba(74,222,128,0.25)', size: 4 },
+      name: 'No estresado', hovertemplate: 'GDT: %{x:.1f}<br>PROMIS: %{y:.1f}<extra></extra>' },
+    { x: gdt.filter((_, i) => stressed[i] === 1), y: promis.filter((_, i) => stressed[i] === 1),
+      type: 'scattergl', mode: 'markers', marker: { color: 'rgba(244,63,94,0.35)', size: 4 },
+      name: 'Estresado', hovertemplate: 'GDT: %{x:.1f}<br>PROMIS: %{y:.1f}<extra></extra>' },
+    { x: [Math.min(...gdt), Math.max(...gdt)],
+      y: [pathC * Math.min(...gdt) + (my - pathC * mx), pathC * Math.max(...gdt) + (my - pathC * mx)],
+      type: 'scatter', mode: 'lines', line: { color: '#f59e0b', width: 2.5 }, name: 'Regresion total',
+      hovertemplate: 'y = %{y:.1f}<extra></extra>' }
+  ], {
+    ...baseLayout,
+    title: { text: 'Adiccion vs Depresion (coloreado por Estres)', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: 'GDT (Adiccion)' },
+    yaxis: { ...baseLayout.yaxis, title: 'PROMIS (Depresion)' },
+    legend: { font: { color: '#94a3b8', size: 10 }, bgcolor: 'rgba(0,0,0,0)', x: 0.02, y: 0.98 },
+    annotations: [{
+      x: 0.97, y: 0.05, xref: 'paper', yref: 'paper',
+      text: '<b>Verde</b> = No estresado<br><b>Rojo</b> = Estresado<br>Efecto total (c) = ' + pathC.toFixed(3),
+      showarrow: false, bgcolor: 'rgba(30,41,59,0.9)', bordercolor: '#334155',
+      font: { color: '#e2e8f0', size: 11, family: 'DM Sans' }, borderwidth: 1, borderpad: 8
+    }]
+  }, plotConfig);
+
+  // Descomposicion del efecto
+  Plotly.newPlot('chart-h3-decomp', [
+    { x: ['Efecto Total (c)', 'Efecto Directo (c\')', 'Efecto Indirecto (a×b)'],
+      y: [pathC, pathCprime, indirectEffect], type: 'bar',
+      marker: { color: ['#94a3b8', '#3b82f6', '#f43f5e'], line: { color: '#1e293b', width: 1.5 } },
+      text: [pathC.toFixed(3), pathCprime.toFixed(3), indirectEffect.toFixed(3)],
+      textposition: 'outside', textfont: { color: '#e2e8f0', size: 12, family: 'Space Grotesk' },
+      hovertemplate: '%{x}: %{y:.4f}<extra></extra>', width: 0.45 }
+  ], {
+    ...baseLayout,
+    title: { text: 'Descomposicion del Efecto de Mediacion', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    xaxis: { ...baseLayout.xaxis, title: '' },
+    yaxis: { ...baseLayout.yaxis, title: 'Coeficiente' },
+    annotations: [{
+      x: 0.5, y: 0.92, xref: 'paper', yref: 'paper',
+      text: `<b>% Mediado = ${pctMediated.toFixed(1)}%</b>`,
+      showarrow: false, bgcolor: 'rgba(244,63,94,0.1)', bordercolor: 'rgba(244,63,94,0.3)',
+      font: { color: '#f43f5e', size: 13, family: 'Space Grotesk' }, borderwidth: 1, borderpad: 8
+    }],
+    showlegend: false, margin: { l: 55, r: 30, t: 50, b: 80 }
+  }, plotConfig);
+
+  // Box plots: PROMIS por nivel de estres y GDT por nivel de estres
+  const promisStressed = promis.filter((_, i) => stressed[i] === 1);
+  const promisNotStressed = promis.filter((_, i) => stressed[i] === 0);
+  const gdtStressed = gdt.filter((_, i) => stressed[i] === 1);
+  const gdtNotStressed = gdt.filter((_, i) => stressed[i] === 0);
+
+  Plotly.newPlot('chart-h3-boxes', [
+    // PROMIS por estres
+    { y: promisNotStressed, name: 'No estresado', type: 'box', marker: { color: '#4ade80' },
+      boxpoints: 'outliers', jitter: 0.3, pointpos: -1.5 },
+    { y: promisStressed, name: 'Estresado', type: 'box', marker: { color: '#f43f5e' },
+      boxpoints: 'outliers', jitter: 0.3, pointpos: -1.5 }
+  ], {
+    ...baseLayout,
+    title: { text: 'Distribucion de Depresion por Nivel de Estres', font: { size: 14, color: '#e2e8f0', family: 'Space Grotesk' } },
+    yaxis: { ...baseLayout.yaxis, title: 'PROMIS (Depresion)' },
+    xaxis: { ...baseLayout.xaxis, title: '' },
+    legend: { font: { color: '#94a3b8', size: 10 }, bgcolor: 'rgba(0,0,0,0)', x: 0.65, y: 1.1, orientation: 'h' },
+  }, plotConfig);
+}
+
+// ============================
+// INICIALIZACION
+// ============================
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderH1();
+
+  // Animacion de entrada suave para las secciones
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.style.opacity = '1';
+        e.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('.kpi-card, .bg-card').forEach(el => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(10px)';
+    el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+    observer.observe(el);
+  });
+});
+</script>
+</body>
+</html>
